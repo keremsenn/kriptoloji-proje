@@ -55,7 +55,7 @@ def encrypt():
         elif method == 'hash':
             result = md5_hash(message)
 
-        elif method == 'caesar':  # ✅ YENİ
+        elif method == 'caesar':
             if not key:
                 return jsonify({"error": "Caesar şifreleme için key (shift) zorunludur"}), 400
             try:
@@ -106,7 +106,7 @@ def decrypt():
         elif method == 'hash':
             result = "Hash işlemi geri alınamaz!"
 
-        elif method == 'caesar':  # ✅ YENİ
+        elif method == 'caesar':
             try:
                 shift = int(key)  # Key olarak sayı bekliyoruz
                 result = caesar_decrypt(message, shift)
