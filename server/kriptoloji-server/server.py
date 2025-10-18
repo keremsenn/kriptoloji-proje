@@ -1,169 +1,195 @@
+from flask import Flask
+from flask_sock import Sock
+import json
+import logging
+from cipher import CipherFactory
 
-class CipherFactory:
-    """Farklı şifreleme yöntemlerini yönetir"""
+# Loglamayı aç
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
-    METHODS = {
-        'caesar': 'Caesar Cipher',
-        'vigenere': 'Vigenere Cipher',
-        'routed': 'Route Cipher'
-    }
+app = Flask(__name__)
+sock = Sock(app)
 
-    @staticmethod
-    def encrypt(text: str, method: str, key: any) -> str:
-        if method == 'caesar':
-            return CaesarCipher.encrypt(text, key)
-        elif method == 'vigenere':
-            return VigenereCipher.encrypt(text, key)
-        elif method == 'routed':
-            return RouteCipher.encrypt(text, key)
-        else:
-            raise ValueError(f"Bilinmeyen şifreleme yöntemi: {method}")
-
-    @staticmethod
-    def decrypt(text: str, method: str, key: any) -> str:
-        if method == 'caesar':
-            return CaesarCipher.decrypt(text, key)
-        elif method == 'vigenere':
-            return VigenereCipher.decrypt(text, key)
-        elif method == 'routed':
-            return RouteCipher.decrypt(text, key)
-        else:
-            raise ValueError(f"Bilinmeyen şifreleme yöntemi: {method}")
+# Varsayılan şifreleme ayarları
+DEFAULT_METHOD = 'caesar'
+DEFAULT_SHIFT = 3
+DEFAULT_VIGENERE_KEY = 'SECRET'
+DEFAULT_ROUTE_KEY = 4
 
 
-class CaesarCipher:
+@app.route('/')
+def index():
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head><title>Caesar Chat Server</title></head>
+    <body>
+        <h1>✅ Şifreli Chat WebSocket Sunucusu Çalışıyor</h1>
+        <p>WS Endpoint: ws://localhost:5001/ws</p>
+        <p>Android'den bağlanmak için: ws://10.0.2.2:5001/ws</p>
+        <p><strong>Desteklenen Şifreleme Yöntemleri:</strong></p>
+        <ul>
+            <li>caesar (shift=3)</li>
+            <li>vigenere (key=SECRET)</li>
+            <li>routed (key=4)</li>
+        </ul>
+        <hr>
+        <h2>Sunucu Logları:</h2>
+        <div id="logs" style="height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px;"></div>
+        <script>
+            const ws = new WebSocket('ws://localhost:5001/ws');
+            const logsDiv = document.getElementById('logs');
 
-    @staticmethod
-    def encrypt(text: str, shift: int) -> str:
-        res = []
-        for ch in text:
-            if 'a' <= ch <= 'z':
-                base = ord('a')
-                res.append(chr((ord(ch) - base + shift) % 26 + base))
-            elif 'A' <= ch <= 'Z':
-                base = ord('A')
-                res.append(chr((ord(ch) - base + shift) % 26 + base))
-            else:
-                res.append(ch)
-        return ''.join(res)
+            ws.onopen = () => {
+                console.log('✅ Test bağlantısı açıldı');
+                addLog('✅ Test bağlantısı açıldı');
+            };
 
-    @staticmethod
-    def decrypt(text: str, shift: int) -> str:
-        return CaesarCipher.encrypt(text, -shift)
+            ws.onmessage = (event) => {
+                console.log('Alındı:', event.data);
+                addLog(`📨 Alındı: ${event.data}`);
+            };
 
+            ws.onerror = (error) => {
+                console.error('❌ Hata:', error);
+                addLog(`❌ Hata: ${error}`);
+            };
 
-class VigenereCipher:
+            ws.onclose = () => {
+                console.log('❌ Test bağlantısı kapandı');
+                addLog('❌ Test bağlantısı kapandı');
+            };
 
-    @staticmethod
-    def _process_key(key: str) -> str:
-        """Anahtarı işle (sadece harfler)"""
-        return ''.join(ch.upper() for ch in key if ch.isalpha())
-
-    @staticmethod
-    def encrypt(text: str, key: str) -> str:
-        if not key:
-            raise ValueError("Vigenere anahtarı boş olamaz")
-
-        key = VigenereCipher._process_key(key)
-        if not key:
-            raise ValueError("Vigenere anahtarı en az bir harf içermeli")
-
-        res = []
-        key_idx = 0
-
-        for ch in text:
-            if ch.isalpha():
-                is_upper = ch.isupper()
-                ch = ch.upper()
-
-                shift = ord(key[key_idx % len(key)]) - ord('A')
-                base = ord('A')
-                encrypted = chr((ord(ch) - base + shift) % 26 + base)
-
-                res.append(encrypted if is_upper else encrypted.lower())
-                key_idx += 1
-            else:
-                res.append(ch)
-
-        return ''.join(res)
-
-    @staticmethod
-    def decrypt(text: str, key: str) -> str:
-        if not key:
-            raise ValueError("Vigenere anahtarı boş olamaz")
-
-        key = VigenereCipher._process_key(key)
-        if not key:
-            raise ValueError("Vigenere anahtarı en az bir harf içermeli")
-
-        res = []
-        key_idx = 0
-
-        for ch in text:
-            if ch.isalpha():
-                is_upper = ch.isupper()
-                ch = ch.upper()
-
-                shift = ord(key[key_idx % len(key)]) - ord('A')
-                base = ord('A')
-                decrypted = chr((ord(ch) - base - shift) % 26 + base)
-
-                res.append(decrypted if is_upper else decrypted.lower())
-                key_idx += 1
-            else:
-                res.append(ch)
-
-        return ''.join(res)
+            function addLog(msg) {
+                const p = document.createElement('p');
+                p.textContent = new Date().toLocaleTimeString() + ' - ' + msg;
+                logsDiv.appendChild(p);
+                logsDiv.scrollTop = logsDiv.scrollHeight;
+            }
+        </script>
+    </body>
+    </html>
+    '''
 
 
-class RouteCipher:
+@sock.route('/ws')
+def websocket(ws):
+    client_addr = ws.environ.get('REMOTE_ADDR', 'Unknown')
+    logger.info(f"✅ İstemci bağlandı: {client_addr}")
+    print(f"\n{'=' * 60}")
+    print(f"✅ YENİ BAĞLANTI: {client_addr}")
+    print(f"{'=' * 60}\n")
 
-    @staticmethod
-    def _pad_text(text: str, cols: int) -> str:
-        """Metni doldur"""
-        padding_needed = (cols - len(text) % cols) % cols
-        return text + 'X' * padding_needed
+    try:
+        while True:
+            data = ws.receive()
+            if data is None:
+                logger.info(f"❌ İstemci bağlantısını kapattı: {client_addr}")
+                print(f"\n❌ Bağlantı kapandı: {client_addr}\n")
+                break
 
-    @staticmethod
-    def encrypt(text: str, key: int = 4) -> str:
-        """Route Cipher ile şifrele"""
-        if key <= 0:
-            key = 4
+            print("-" * 60)
+            print(f"📥 RAW DATA: {data}")
 
-        text = RouteCipher._pad_text(text, key)
-        rows = len(text) // key
+            # JSON parse et
+            try:
+                packet = json.loads(data)
+                message = packet.get('message', '')
+                method = packet.get('method', DEFAULT_METHOD)
+                key = packet.get('key', None)
 
-        # Grid oluştur
-        grid = [text[i * key:(i + 1) * key] for i in range(rows)]
+                logger.debug(f"📨 Paket alındı - Method: {method}, Message: {message}")
 
-        # Sütunları oku
-        result = []
-        for col in range(key):
-            for row in range(rows):
-                result.append(grid[row][col])
+                # Anahtarları belirle ve dönüştür
+                if method == 'caesar':
+                    if key is None:
+                        key = DEFAULT_SHIFT
+                    else:
+                        key = int(key) if isinstance(key, str) else key
+                elif method == 'vigenere':
+                    if key is None:
+                        key = DEFAULT_VIGENERE_KEY
+                    else:
+                        key = str(key)
+                elif method == 'routed':
+                    if key is None:
+                        key = DEFAULT_ROUTE_KEY
+                    else:
+                        key = int(key) if isinstance(key, str) else key
 
-        return ''.join(result)
+                print(f"🔐 Şifreleme Yöntemi: {method}")
+                print(f"🔑 Anahtar: {key}")
+                print(f"📨 Şifreli Mesaj: {message}")
 
-    @staticmethod
-    def decrypt(text: str, key: int = 4) -> str:
-        """Route Cipher deşifrele"""
-        if key <= 0:
-            key = 4
+                # Deşifre et
+                try:
+                    decrypted = CipherFactory.decrypt(message, method, key)
+                    print(f"🔓 Çözüldü: {decrypted}")
+                except Exception as e:
+                    print(f"❌ Deşifreleme Hatası: {e}")
+                    logger.error(f"Deşifreleme hatası: {e}", exc_info=True)
+                    decrypted = f"[HATA] {str(e)}"
 
-        rows = len(text) // key
+                # İşle
+                processed = decrypted + " (sunucuda alındı)"
+                print(f"🔄 İşlendi: {processed}")
 
-        # Grid oluştur (deşifreleme için)
-        grid = [[''] * key for _ in range(rows)]
-        idx = 0
+                # Aynı yönteme göre şifrele
+                try:
+                    encrypted_response = CipherFactory.encrypt(processed, method, key)
+                    print(f"🔐 Şifreli Cevap: {encrypted_response}")
+                except Exception as e:
+                    print(f"❌ Şifreleme Hatası: {e}")
+                    logger.error(f"Şifreleme hatası: {e}", exc_info=True)
+                    encrypted_response = processed
 
-        for col in range(key):
-            for row in range(rows):
-                grid[row][col] = text[idx]
-                idx += 1
+                # Cevap paketini oluştur
+                response_packet = {
+                    "message": encrypted_response,
+                    "method": method,
+                    "key": str(key) if method != 'caesar' else key
+                }
+                response = json.dumps(response_packet)
 
-        # Satırları oku
-        result = []
-        for row in range(rows):
-            result.extend(grid[row])
+                print(f"📤 Gönderiliyor: {response}")
+                ws.send(response)
+                print(f"✅ Cevap Gönderildi")
 
-        return ''.join(result).rstrip('X')
+            except json.JSONDecodeError as e:
+                print(f"⚠️  JSON Parse Hatası: {e}")
+                logger.warning(f"JSON parse başarısız: {data}")
+                error_response = {
+                    "message": "JSON Parse Hatası",
+                    "error": True
+                }
+                ws.send(json.dumps(error_response))
+            except Exception as e:
+                logger.error(f"❌ İşlem Hatası: {e}", exc_info=True)
+                print(f"❌ İşlem Hatası: {e}")
+                error_response = {
+                    "message": f"Sunucu Hatası: {str(e)}",
+                    "error": True
+                }
+                ws.send(json.dumps(error_response))
+
+    except Exception as e:
+        logger.error(f"❌ Bağlantı Hatası: {e}", exc_info=True)
+        print(f"❌ HATA: {e}\n")
+
+
+if __name__ == "__main__":
+    print("\n" + "=" * 60)
+    print("🚀 Şifreli Chat WebSocket Sunucusu Başlatılıyor...")
+    print("=" * 60)
+    print("📍 Localhost: ws://localhost:5001/ws")
+    print("📍 Android Emulator: ws://10.0.2.2:5001/ws")
+    print("🌐 HTTP: http://localhost:5001/")
+    print("=" * 60 + "\n")
+
+    app.run(
+        host='0.0.0.0',
+        port=5001,
+        debug=False,
+        use_reloader=False
+    )
