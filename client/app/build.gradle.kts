@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     kotlin("plugin.serialization") version "2.0.21"
     id("kotlin-kapt")
+    id("dagger.hilt.android.plugin")
 
 }
 
@@ -52,9 +53,19 @@ dependencies {
     implementation(libs.androidx.navigation.ui)
     implementation(libs.androidx.navigation.dynamic.features.fragment)
 
+    implementation (libs.okhttp)
+
+    implementation(libs.socket.io.client)
+    implementation(libs.gson)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+
     implementation(libs.hilt.android)
     kapt(libs.hilt.android.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
+
+    implementation(libs.retrofit)
+    implementation(libs.converter.gson)
 
 
     implementation(libs.androidx.core.ktx)
