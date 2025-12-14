@@ -14,3 +14,6 @@
 .cxx
 local.properties
 hs_err_pid*.log
+__pycache__/
+*.py[cod]
+*$py.class
