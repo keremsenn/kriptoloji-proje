@@ -26,11 +26,12 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val cipherMethod by viewModel.cipherMethod.collectAsState()
     val cipherKey by viewModel.cipherKey.collectAsState()
+    val useLibrary by viewModel.useLibrary.collectAsState()
     val listState = rememberLazyListState()
 
     var expandedMethod by remember { mutableStateOf(false) }
 
-    val cipherMethods = listOf("caesar", "vigenere", "routed")
+    val cipherMethods = listOf("aes", "des", "rsa")
 
     // Son mesaja kaydır
     LaunchedEffect(messages.size) {
@@ -58,7 +59,7 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "🔐 Şifreli Chat",
+                        "🔐 Kriptoloji Projesi",
                         style = MaterialTheme.typography.titleMedium,
                         fontSize = 18.sp
                     )
@@ -88,7 +89,7 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
         ) {
             Button(
                 onClick = {
-                    viewModel.startSocket("ws://192.168.0.6:5001/ws")
+                    viewModel.startSocket("ws://192.168.0.4:5000/ws")
                 },
                 modifier = Modifier.weight(1f),
                 enabled = !isConnected
@@ -132,7 +133,7 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
                     Button(
                         onClick = { expandedMethod = !expandedMethod },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = isConnected
+                        enabled = !isConnected
                     ) {
                         Text(cipherMethod.uppercase())
                         Icon(Icons.Default.KeyboardArrowDown, contentDescription = null)
@@ -157,30 +158,71 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Anahtar Giriş
-                OutlinedTextField(
-                    value = cipherKey,
-                    onValueChange = { viewModel.setCipherKey(it) },
-                    label = { Text("Şifreleme Anahtarı") },
+                // Kütüphane Modu Seçimi
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = isConnected,
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp)
-                )
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "📚 Mod:",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 12.sp
+                    )
+                    Switch(
+                        checked = useLibrary,
+                        onCheckedChange = { viewModel.setUseLibrary(it) },
+                        enabled = !isConnected
+                    )
+                    Text(
+                        if (useLibrary) "Kütüphaneli" else "Kütüphanesiz",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                Text(
-                    when (cipherMethod) {
-                        "caesar" -> "💡 Caesar: Sayı girin (örn: 3)"
-                        "vigenere" -> "💡 Vigenere: Metin girin (örn: SECRET)"
-                        "routed" -> "💡 Route: Sayı girin (örn: 4)"
-                        else -> ""
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    fontSize = 10.sp,
-                    color = Color.Gray
-                )
+                // Anahtar Giriş (RSA için gizle)
+                if (cipherMethod != "rsa") {
+                    OutlinedTextField(
+                        value = cipherKey,
+                        onValueChange = { viewModel.setCipherKey(it) },
+                        label = { Text("Şifreleme Anahtarı") },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isConnected,
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp)
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        when (cipherMethod) {
+                            "aes" -> "💡 AES-128: 16 byte anahtar (örn: default_aes_key_16)"
+                            "des" -> "💡 DES: 8 byte anahtar (örn: default_des)"
+                            else -> ""
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 10.sp,
+                        color = Color.Gray
+                    )
+                } else {
+                    Text(
+                        "💡 RSA: Mesajlar server'ın public key'i ile şifrelenir",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 10.sp,
+                        color = Color(0xFFFF9800)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "⚠️ RSA yavaştır, büyük mesajlar için AES/DES önerilir",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 10.sp,
+                        color = Color(0xFFF44336)
+                    )
+                }
             }
         }
 
