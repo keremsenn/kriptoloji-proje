@@ -2,3 +2,4 @@ Flask==2.3.3
 flask-cors==4.0.0
 pydantic==1.10.12
 Flask-Sock==0.6.0
+pycryptodome==3.19.0
