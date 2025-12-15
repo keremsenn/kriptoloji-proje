@@ -16,8 +16,7 @@ def create_app():
     key_service = KeyService()
     key_service.initialize()
 
-    from app.routes import web, websocket
-    app.register_blueprint(web.bp)
+    from app.routes import  websocket
     websocket.register_socket_routes(sock, key_service)
     
     return app, sock
