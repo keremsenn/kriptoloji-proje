@@ -1,26 +1,21 @@
-
 from cipher.aes import AESCipher
 from cipher.des import DESCipher
-from cipher.rsa import RSACipher
-
 
 class CipherFactory:
     METHODS = {
         'aes': 'AES-128',
-        'des': 'DES',
-        'rsa': 'RSA'
+        'des': 'DES'
     }
 
     @staticmethod
     def encrypt(text: str, method: str, key, use_library: bool = True) -> str:
+        """Sadece simetrik yöntemlerle (AES/DES) mesaj şifreler."""
         if method == 'aes':
             return AESCipher.encrypt(text, key, use_library)
         elif method == 'des':
             return DESCipher.encrypt(text, key, use_library)
-        elif method == 'rsa':
-            return RSACipher.encrypt(text, key, use_library)
         else:
-            raise ValueError(f"Bilinmeyen şifreleme yöntemi: {method}")
+            raise ValueError(f"Mesajlaşma için desteklenmeyen veya geçersiz yöntem: {method}")
 
     @staticmethod
     def decrypt(text: str, method: str, key, use_library: bool = True) -> str:
@@ -28,9 +23,5 @@ class CipherFactory:
             return AESCipher.decrypt(text, key, use_library)
         elif method == 'des':
             return DESCipher.decrypt(text, key, use_library)
-        elif method == 'rsa':
-            return RSACipher.decrypt(text, key, use_library)
         else:
-            raise ValueError(f"Bilinmeyen şifreleme yöntemi: {method}")
-
-
+            raise ValueError(f"Mesajlaşma için desteklenmeyen veya geçersiz yöntem: {method}")
