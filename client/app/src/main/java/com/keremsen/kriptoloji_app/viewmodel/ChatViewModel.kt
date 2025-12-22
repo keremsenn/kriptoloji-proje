@@ -10,11 +10,13 @@ import org.json.JSONObject
 import com.keremsen.kriptoloji_app.view.SocketManager
 import com.keremsen.kriptoloji_app.cipher.CipherFactory
 import com.keremsen.kriptoloji_app.cipher.RSACipher
-import java.security.MessageDigest
+import com.keremsen.kriptoloji_app.cipher.ECCCipher
+import java.util.UUID
 
 class ChatViewModel : ViewModel() {
 
     private var socketManager: SocketManager? = null
+    private val TAG = "ChatViewModel"
 
     private val _messages = MutableStateFlow<List<String>>(emptyList())
     val messages = _messages.asStateFlow()
@@ -25,109 +27,67 @@ class ChatViewModel : ViewModel() {
     private val _connectionStatus = MutableStateFlow("Bağlantı yok")
     val connectionStatus = _connectionStatus.asStateFlow()
 
+    // UI'dan seçilen şifreleme metodu
     private val _cipherMethod = MutableStateFlow("aes")
     val cipherMethod = _cipherMethod.asStateFlow()
 
-    private val _cipherKey = MutableStateFlow("default_key_16")
-    val cipherKey = _cipherKey.asStateFlow()
+    // UI'dan seçilen el sıkışma yöntemi
+    private val _handshakeMethod = MutableStateFlow("rsa")
+    val handshakeMethod = _handshakeMethod.asStateFlow()
 
     private val _useLibrary = MutableStateFlow(true)
     val useLibrary = _useLibrary.asStateFlow()
 
+    // Kriptografik Durumlar
     private var serverPublicKey: String? = null
+    private var serverEccPublicKey: String? = null
     private var symmetricKey: String? = null
-    private var clientPublicKey: String? = null
-    private var clientPrivateKey: String? = null
-
-    private val TAG = "ChatViewModel"
+    private var clientRsaPublicKey: String? = null
+    private var clientRsaPrivateKey: String? = null
+    private var clientEccPublicKey: String? = null
+    private var clientEccPrivateKey: String? = null
 
     fun setCipherMethod(method: String) {
         _cipherMethod.value = method
-        Log.d(TAG, "Şifreleme yöntemi değiştirildi: $method")
-        when (method) {
-            "aes" -> _cipherKey.value = "default_aes_key_16"
-            "des" -> _cipherKey.value = "default_des"
-            "rsa" -> _cipherKey.value = ""
-        }
-
         appendMessage("[sistem] 🔐 Şifreleme yöntemi: ${method.uppercase()}")
     }
 
-    fun setCipherKey(key: String) {
-        _cipherKey.value = key
-        Log.d(TAG, "Şifreleme anahtarı değiştirildi: $key")
+    fun setHandshakeMethod(method: String) {
+        _handshakeMethod.value = method
+        appendMessage("[sistem] 🔑 El sıkışma tercihi: ${method.uppercase()}")
     }
 
     fun setUseLibrary(useLibrary: Boolean) {
         _useLibrary.value = useLibrary
-        appendMessage("[sistem] 📚 Mod: ${if (useLibrary) "Kütüphaneli" else "Kütüphanesiz (Manuel)"}")
     }
 
-    fun startSocket(wsUrl: String = "ws://192.168.0.5:5000/ws") {
-        if (socketManager != null) {
-            Log.w(TAG, "Socket zaten bağlı")
-            appendMessage("[sistem] ⚠️ WebSocket zaten aktif")
-            return
-        }
+    fun startSocket(wsUrl: String) {
+        if (socketManager != null) return
 
-        Log.d(TAG, "WebSocket bağlanıyor: $wsUrl")
-        appendMessage("[sistem] 🔄 Bağlantı kuruluyor: $wsUrl")
         _connectionStatus.value = "Bağlantı kuruluyor..."
-
         socketManager = SocketManager(
             url = wsUrl,
-            onMessage = { text ->
-                Log.d(TAG, "Sunucudan veri alındı: $text")
-                handleServerMessage(text)
-            },
+            onMessage = { handleServerMessage(it) },
             onOpen = {
-                Log.d(TAG, "WebSocket bağlantısı açıldı")
                 _isConnected.value = true
                 _connectionStatus.value = "Bağlı ✅"
                 appendMessage("[sistem] ✅ Sunucuya bağlandı!")
-                appendMessage("[sistem] 🔐 Aktif Yöntem: ${_cipherMethod.value.uppercase()}")
-                appendMessage("[sistem] 📚 Mod: ${if (_useLibrary.value) "Kütüphaneli" else "Kütüphanesiz"}")
-                try {
-                    val (publicKey, privateKey) = RSACipher.generateKeyPair()
-                    clientPublicKey = publicKey
-                    clientPrivateKey = privateKey
-                    Log.d(TAG, "Client RSA key çifti oluşturuldu")
 
-                    val clientKeyPacket = JSONObject().apply {
-                        put("type", "client_rsa_public_key")
-                        put("public_key", publicKey)
-                    }
-                    socketManager?.send(clientKeyPacket.toString())
-                    Log.d(TAG, "Client RSA public key gönderildi")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Client RSA key oluşturma hatası: ${e.message}", e)
-                    appendMessage("[sistem] ⚠️ Client RSA key oluşturulamadı: ${e.message}")
+                // 1. ADIM: Sunucuya bağlantı tercihini bildir
+                val setupPacket = JSONObject().apply {
+                    put("type", "setup_connection")
+                    put("preferred_method", _handshakeMethod.value)
                 }
-                
-                appendMessage("[sistem] Şu anda mesaj gönderebilirsiniz")
+                socketManager?.send(setupPacket.toString())
             },
             onClose = {
-                Log.d(TAG, "WebSocket bağlantısı kapandı")
                 _isConnected.value = false
                 _connectionStatus.value = "Bağlantı kapandı"
-                serverPublicKey = null
-                symmetricKey = null
-                clientPublicKey = null
-                clientPrivateKey = null
+                resetCryptoState()
                 socketManager = null
             }
         )
-
-        try {
-            socketManager?.connect()
-            Log.d(TAG, "connect() çağrıldı")
-        } catch (e: Exception) {
-            Log.e(TAG, "Bağlantı hatası: ${e.message}", e)
-            _connectionStatus.value = "Bağlantı hatası: ${e.message}"
-            appendMessage("[sistem] ❌ Hata: ${e.message}")
-            socketManager = null
-            _isConnected.value = false
-        }
+        socketManager?.connect()
     }
 
     private fun handleServerMessage(text: String) {
@@ -138,182 +98,145 @@ class ChatViewModel : ViewModel() {
             when (packetType) {
                 "rsa_public_key" -> {
                     serverPublicKey = packet.getString("public_key")
-                    Log.d(TAG, "RSA public key alındı")
-                    appendMessage("[sistem] 🔑 RSA public key alındı")
-                    performKeyExchange()
-                }
-                "key_exchange_ack" -> {
-                    val status = packet.optString("status", "error")
-                    if (status == "success") {
-                        appendMessage("[sistem] ✅ Anahtar değişimi başarılı")
-                    } else {
-                        appendMessage("[sistem] ❌ Anahtar değişimi başarısız: ${packet.optString("message", "")}")
-                    }
-                }
-                "message" -> {
-                    val encrypted = packet.optString("message", text)
-                    val method = packet.optString("method", _cipherMethod.value)
-                    val useLibrary = packet.optBoolean("use_library", _useLibrary.value)
+                    appendMessage("[sistem] 🔑 Sunucu RSA anahtarı alındı")
 
-                    val decrypted = if (method == "rsa") {
-                        if (encrypted.startsWith("[") && encrypted.endsWith("]")) {
-                            if (useLibrary) {
-                                if (clientPrivateKey == null) {
-                                    appendMessage("[sistem] ⚠️ Client private key bulunamadı!")
-                                    "[RSA şifreli mesaj - deşifrelenemedi]"
-                                } else {
-                                    try {
-                                        Log.d(TAG, "RSA ile mesaj deşifreleniyor... (Kütüphaneli)")
-                                        RSACipher.decrypt(encrypted, clientPrivateKey!!, useLibrary)
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "RSA deşifreleme hatası: ${e.message}", e)
-                                        appendMessage("[sistem] ⚠️ RSA deşifreleme hatası: ${e.message}")
-                                        "[RSA deşifreleme hatası]"
-                                    }
-                                }
-                            } else {
-                                if (clientPublicKey == null) {
-                                    appendMessage("[sistem] ⚠️ Client public key bulunamadı!")
-                                    "[RSA şifreli mesaj - deşifrelenemedi]"
-                                } else {
-                                    try {
-                                        Log.d(TAG, "RSA ile mesaj deşifreleniyor... (Manuel)")
-                                        RSACipher.decrypt(encrypted, clientPublicKey!!, useLibrary)
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "RSA deşifreleme hatası: ${e.message}", e)
-                                        appendMessage("[sistem] ⚠️ RSA deşifreleme hatası: ${e.message}")
-                                        "[RSA deşifreleme hatası]"
-                                    }
-                                }
-                            }
-                        } else {
-                            encrypted
-                        }
-                    } else {
-                        val key = symmetricKey ?: _cipherKey.value
-                        CipherFactory.decrypt(encrypted, method, key, useLibrary)
-                    }
-                    Log.d(TAG, "Mesaj çözüldü: $decrypted")
-                    appendMessage("[sunucudan] $decrypted")
+                    val (pub, priv) = RSACipher.generateKeyPair()
+                    clientRsaPublicKey = pub
+                    clientRsaPrivateKey = priv
+
+                    socketManager?.send(JSONObject().apply {
+                        put("type", "client_rsa_public_key")
+                        put("public_key", pub)
+                    }.toString())
+                    performRsaKeyExchange()
                 }
+
+                "ecc_public_key" -> {
+                    serverEccPublicKey = packet.getString("public_key")
+                    appendMessage("[sistem] 🔑 Sunucu ECC anahtarı alındı (ECDH)")
+
+                    val (myPub, myPriv) = ECCCipher.generateKeyPair()
+                    clientEccPublicKey = myPub
+                    clientEccPrivateKey = myPriv
+
+                    // ECDH ile ortak anahtarı (Shared Secret) otomatik türet
+                    symmetricKey = ECCCipher.deriveSharedKey(myPriv, serverEccPublicKey!!)
+
+                    val eccResponse = JSONObject().apply {
+                        put("type", "client_ecc_public_key")
+                        put("public_key", myPub)
+                        put("method", _cipherMethod.value)
+                    }
+
+                    socketManager?.send(eccResponse.toString())
+                    Log.d(TAG, "✅ ECC El sıkışma paketi gönderildi. Metod: ${_cipherMethod.value}")
+                }
+
+                "key_exchange_ack" -> {
+                    if (packet.optString("status") == "success") {
+                        appendMessage("[sistem] ✅ Güvenli hat kuruldu.")
+                    }
+                }
+
+                "message" -> {
+                    val encrypted = packet.getString("message")
+                    val method = packet.optString("method", _cipherMethod.value)
+                    val useLib = packet.optBoolean("use_library", _useLibrary.value)
+
+                    try {
+                        val key = symmetricKey
+                        if (key == null) {
+                            appendMessage("[sistem] ⚠️ Hata: Anahtar henüz hazır değil!")
+                        } else {
+                            val decrypted = CipherFactory.decrypt(encrypted, method, key, useLib)
+                            appendMessage("[sunucudan] $decrypted")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Deşifreleme hatası: ${e.message}")
+                        appendMessage("[hata] Mesaj çözülemedi.")
+                    }
+                }
+
                 "error" -> {
                     val errorMsg = packet.optString("message", "Bilinmeyen hata")
-                    appendMessage("[hata] $errorMsg")
-                }
-                else -> {
-                    val encrypted = packet.optString("message", text)
-                    val method = packet.optString("method", _cipherMethod.value)
-                    val key = symmetricKey ?: _cipherKey.value
-                    val decrypted = CipherFactory.decrypt(encrypted, method, key, _useLibrary.value)
-                    appendMessage("[sunucudan] $decrypted")
+                    appendMessage("[hata] Sunucu hatası: $errorMsg")
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Paket işleme hatası: ${e.message}", e)
-            appendMessage("[hata] Paket işleme hatası: ${e.message}")
+            Log.e(TAG, "Paket işleme hatası: ${e.message}")
         }
     }
 
-    private fun performKeyExchange() {
-        if (serverPublicKey == null) {
-            Log.w(TAG, "RSA public key henüz alınmadı")
-            return
-        }
-
+    private fun performRsaKeyExchange() {
         try {
             val method = _cipherMethod.value
-            val key = when (method) {
-                "aes" -> {
-                    val md = MessageDigest.getInstance("MD5")
-                    md.digest(_cipherKey.value.toByteArray()).joinToString("") { "%02x".format(it) }
-                }
-                "des" -> {
-                    val md = MessageDigest.getInstance("MD5")
-                    md.digest(_cipherKey.value.toByteArray()).sliceArray(0 until 8).joinToString("") { "%02x".format(it) }
-                }
-                else -> _cipherKey.value
-            }
-            symmetricKey = key
-            val encryptedKey = RSACipher.encrypt(key, serverPublicKey!!)
-            val keyExchangePacket = JSONObject().apply {
+
+            val randomKey = UUID.randomUUID().toString().substring(0, 16)
+            symmetricKey = randomKey
+
+            val encryptedKey = RSACipher.encrypt(randomKey, serverPublicKey!!)
+
+            socketManager?.send(JSONObject().apply {
                 put("type", "key_exchange")
                 put("encrypted_key", encryptedKey)
                 put("method", method)
-            }
+            }.toString())
 
-            socketManager?.send(keyExchangePacket.toString())
-            Log.d(TAG, "Anahtar değişim paketi gönderildi")
-            appendMessage("[sistem] 🔄 Anahtar değişimi başlatıldı")
+            appendMessage("[sistem] 🔐 Oturum anahtarı otomatik oluşturuldu.")
         } catch (e: Exception) {
-            Log.e(TAG, "Anahtar değişimi hatası: ${e.message}", e)
-            appendMessage("[hata] Anahtar değişimi hatası: ${e.message}")
-        }
-    }
-
-    fun stopSocket() {
-        Log.d(TAG, "WebSocket kapatılıyor...")
-        if (socketManager == null) {
-            appendMessage("[sistem] ⚠️ Socket zaten kapalı")
-            return
-        }
-
-        try {
-            socketManager?.close()
-            appendMessage("[sistem] 🔌 Bağlantı kapatıldı")
-        } catch (e: Exception) {
-            Log.e(TAG, "Kapatırken hata: ${e.message}")
-            appendMessage("[sistem] ⚠️ Kapatırken hata: ${e.message}")
+            appendMessage("[hata] RSA Değişim Hatası")
         }
     }
 
     fun sendMessage(plainText: String) {
         if (!_isConnected.value) {
-            Log.w(TAG, "Bağlantı yok, mesaj gönderilemedi")
-            appendMessage("[sistem] ⚠️ Sunucuya bağlı değilsiniz!")
+            appendMessage("[sistem] ⚠️ Bağlı değilsiniz.")
             return
         }
 
-        Log.d(TAG, "Mesaj gönderiliyor: $plainText")
+        val activeKey = symmetricKey
+        if (activeKey == null) {
+            appendMessage("[sistem] ⚠️ Önce anahtar değişimi tamamlanmalı!")
+            return
+        }
+
         val method = _cipherMethod.value
-        val useLibrary = _useLibrary.value
+        val useLib = _useLibrary.value
 
         try {
-            val encrypted = if (method == "rsa") {
-                if (serverPublicKey == null) {
-                    appendMessage("[sistem] ⚠️ RSA public key henüz alınmadı!")
-                    return
-                }
-                Log.d(TAG, "RSA ile mesaj şifreleniyor... (Manuel: ${!useLibrary})")
-                RSACipher.encrypt(plainText, serverPublicKey!!, useLibrary)
-            } else {
-                val key = symmetricKey ?: _cipherKey.value
-                CipherFactory.encrypt(plainText, method, key, useLibrary)
-            }
-            Log.d(TAG, "Mesaj şifrelendi [$method]: ${encrypted.take(100)}...")
+            val encrypted = CipherFactory.encrypt(plainText, method, activeKey, useLib)
 
             val packet = JSONObject().apply {
                 put("type", "message")
                 put("message", encrypted)
                 put("method", method)
-                put("use_library", useLibrary)
+                put("use_library", useLib)
             }
 
             socketManager?.send(packet.toString())
-            Log.d(TAG, "Paket gönderildi")
-
             appendMessage("[ben] $plainText ✓")
+
         } catch (e: Exception) {
-            Log.e(TAG, "Gönderim hatası: ${e.message}", e)
-            appendMessage("[sistem] ❌ Gönderim hatası: ${e.message}")
+            Log.e(TAG, "Gönderim hatası: ${e.message}")
+            appendMessage("[hata] Mesaj şifrelenemedi.")
         }
     }
 
+    private fun resetCryptoState() {
+        serverPublicKey = null
+        serverEccPublicKey = null
+        symmetricKey = null
+        clientRsaPublicKey = null
+        clientRsaPrivateKey = null
+        clientEccPublicKey = null
+        clientEccPrivateKey = null
+    }
+
     private fun appendMessage(m: String) {
-        viewModelScope.launch {
-            val cur = _messages.value.toMutableList()
-            cur.add(m)
-            _messages.value = cur
-            Log.v(TAG, "Mesaj eklendi: $m")
-        }
+        viewModelScope.launch { _messages.value = _messages.value + m }
+    }
+
+    fun stopSocket() {
+        socketManager?.close()
     }
 }
