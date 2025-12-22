@@ -1,9 +1,6 @@
-
 import base64
 import hashlib
-import os
 from cipher.base import LIBRARY_MODE_AVAILABLE, AES, pad, unpad
-
 
 class AESCipher:
 
@@ -42,8 +39,7 @@ class AESCipher:
         iv = cipher.iv
         padded_text = pad(text_bytes, AES.block_size)
         ciphertext = cipher.encrypt(padded_text)
-        result = base64.b64encode(iv + ciphertext).decode('utf-8')
-        return result
+        return base64.b64encode(iv + ciphertext).decode('utf-8')
 
     @staticmethod
     def _decrypt_library(ciphertext: str, key: bytes) -> str:
@@ -56,30 +52,11 @@ class AESCipher:
 
     @staticmethod
     def _encrypt_manual(text_bytes: bytes, key: bytes) -> str:
-        iv = os.urandom(16) if hasattr(os, 'urandom') else b'\x00' * 16
-        result = bytearray()
-        
-        for i in range(0, len(text_bytes), 16):
-            block = text_bytes[i:i+16]
-            padded_block = block.ljust(16, b'\0')
-            encrypted_block = bytes(a ^ b for a, b in zip(padded_block, key))
-            result.extend(encrypted_block)
-        
-        combined = iv + bytes(result)
-        return base64.b64encode(combined).decode('utf-8')
+        result = bytes(b ^ key[i % len(key)] for i, b in enumerate(text_bytes))
+        return base64.b64encode(result).decode('utf-8')
 
     @staticmethod
     def _decrypt_manual(ciphertext: str, key: bytes) -> str:
         data = base64.b64decode(ciphertext)
-        iv = data[:16]
-        encrypted = data[16:]
-        
-        result = bytearray()
-        for i in range(0, len(encrypted), 16):
-            block = encrypted[i:i+16]
-            decrypted_block = bytes(a ^ b for a, b in zip(block, key))
-            result.extend(decrypted_block)
-        
-        decrypted = bytes(result).rstrip(b'\0')
-        return decrypted.decode('utf-8', errors='ignore')
-
+        result = bytes(b ^ key[i % len(key)] for i, b in enumerate(data))
+        return result.decode('utf-8')
