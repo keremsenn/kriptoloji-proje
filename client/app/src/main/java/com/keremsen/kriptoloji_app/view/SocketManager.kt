@@ -15,106 +15,76 @@ class SocketManager(
 
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
-        .connectTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
         .build()
 
     private var webSocket: WebSocket? = null
 
     fun connect() {
-        Log.d(TAG, "=== BAĞLANTIYA BAŞLANIYYOR ===")
-        Log.d(TAG, "URL: $url")
-
-        val request = Request.Builder()
-            .url(url)
-            .build()
+        Log.d(TAG, "📡 Bağlantı kuruluyor: $url")
+        val request = Request.Builder().url(url).build()
 
         try {
+            webSocket?.close(1000, "New connection starting")
             webSocket = client.newWebSocket(request, socketListener)
-            Log.d(TAG, "WebSocket nesnesi oluşturuldu")
         } catch (e: Exception) {
-            Log.e(TAG, "Bağlantı hatası: ${e.message}", e)
+            Log.e(TAG, "❌ Socket başlatma hatası: ${e.message}")
             onClose()
         }
     }
 
     fun close() {
-        Log.d(TAG, "=== BAĞLANTIYA KAPATILIYOR ===")
         try {
-            webSocket?.close(1000, "Client closing")
-            Log.d(TAG, "WebSocket kapalı komutası gönderildi")
-            client.dispatcher.executorService.shutdown()
-            Log.d(TAG, "HTTP client kapatıldı")
+            webSocket?.close(1000, "User logout")
+            webSocket = null
+            Log.d(TAG, "🔌 Bağlantı kullanıcı tarafından kapatıldı")
         } catch (e: Exception) {
-            Log.e(TAG, "Kapatmada hata: ${e.message}", e)
+            Log.e(TAG, "❌ Kapatma hatası: ${e.message}")
         }
     }
 
     fun send(text: String) {
-        if (webSocket == null) {
-            Log.e(TAG, "❌ WebSocket null, mesaj gönderilemedi!")
+        val currentSocket = webSocket
+        if (currentSocket == null) {
+            Log.e(TAG, "⚠️ Gönderilemedi: WebSocket bağlı değil!")
             return
         }
 
-        Log.d(TAG, "📤 Gönderiliyor: $text")
         try {
-            val success = webSocket?.send(text) ?: false
-            if (success) {
-                Log.d(TAG, "✅ Mesaj gönderildi")
-            } else {
-                Log.e(TAG, "❌ Gönderme başarısız")
-            }
+            val success = currentSocket.send(text)
+            if (!success) Log.e(TAG, "⚠️ Mesaj kuyruğa alınamadı")
         } catch (e: Exception) {
-            Log.e(TAG, "Gönderme hatası: ${e.message}", e)
+            Log.e(TAG, "❌ Gönderim hatası: ${e.message}")
         }
     }
 
     private val socketListener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            super.onOpen(webSocket, response)
-            Log.d(TAG, "✅ ============ WebSocket AÇILDI ============")
-            Log.d(TAG, "Status: ${response.code}")
-            Log.d(TAG, "Message: ${response.message}")
-            Log.d(TAG, "Headers: ${response.headers}")
+            Log.d(TAG, "✅ WebSocket Bağlantısı Başarılı")
             onOpen()
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            super.onMessage(webSocket, text)
-            Log.d(TAG, "📨 Metin mesajı alındı: $text")
             onMessage(text)
         }
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-            super.onMessage(webSocket, bytes)
-            val utf8Text = bytes.utf8()
-            Log.d(TAG, "📨 Binary mesaj alındı: $utf8Text")
-            onMessage(utf8Text)
+            onMessage(bytes.utf8())
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-            super.onClosing(webSocket, code, reason)
-            Log.d(TAG, "⚠️  KAPATILIYOR - Code: $code, Reason: $reason")
-            webSocket.close(1000, "Client responding to close")
+            Log.d(TAG, "⚠️ Sunucu bağlantıyı kapatıyor: $reason")
+            webSocket.close(1000, null)
             onClose()
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            super.onClosed(webSocket, code, reason)
-            Log.d(TAG, "❌ ============ WebSocket KAPANDI ============")
-            Log.d(TAG, "Close Code: $code")
-            Log.d(TAG, "Close Reason: $reason")
+            Log.d(TAG, "🚫 WebSocket Kapandı")
             onClose()
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            super.onFailure(webSocket, t, response)
-            Log.e(TAG, "❌ ============ BAĞLANTIYA HATASI ============", t)
-            Log.e(TAG, "Hata Mesajı: ${t.localizedMessage}")
-            Log.e(TAG, "Hata Sınıfı: ${t.javaClass.simpleName}")
-            if (response != null) {
-                Log.e(TAG, "HTTP Status: ${response.code}")
-                Log.e(TAG, "HTTP Message: ${response.message}")
-            }
+            Log.e(TAG, "❌ Bağlantı Hatası: ${t.message}")
             onClose()
         }
     }
