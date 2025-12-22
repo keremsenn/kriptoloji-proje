@@ -1,5 +1,12 @@
+# Web Sunucusu ve WebSocket
 Flask==2.3.3
 flask-cors==4.0.0
-pydantic==1.10.12
 Flask-Sock==0.6.0
+
+# Kriptografi (Simetrik: AES/DES, Asimetrik: RSA/ECC)
 pycryptodome==3.19.0
+cryptography==41.0.3
+
+# Veri Doğrulama ve Yardımcılar
+pydantic==1.10.12
+Werkzeug==2.3.7
