@@ -18,6 +18,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.keremsen.kriptoloji_app.viewmodel.ChatViewModel
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import android.net.Uri
+import android.provider.OpenableColumns
 
 @Composable
 fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
@@ -30,8 +35,40 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
     val useLibrary by viewModel.useLibrary.collectAsState()
     val listState = rememberLazyListState()
 
+    // Sunucu Bağlantı Ayarları
+    var ipAddress by remember { mutableStateOf("192.168.0.5") }
+    var port by remember { mutableStateOf("5000") }
+
     var expandedMethod by remember { mutableStateOf(false) }
     val cipherMethods = listOf("aes", "des")
+
+    val context = LocalContext.current
+    val contentResolver = context.contentResolver
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            try {
+                contentResolver.openInputStream(it)?.use { inputStream ->
+                    val bytes = inputStream.readBytes()
+                    
+                    // Dosya ismini al
+                    var fileName = "unknown_file"
+                    contentResolver.query(it, null, null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                            if (nameIndex != -1) fileName = cursor.getString(nameIndex)
+                        }
+                    }
+                    
+                    viewModel.sendFile(fileName, bytes)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
 
     // Yeni mesaj geldiğinde otomatik aşağı kaydır
     LaunchedEffect(messages.size) {
@@ -95,23 +132,54 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
             }
         }
 
-        // 3. BAĞLANTI BUTONLARI
-        Row(
+        // 3. BAĞLANTI AYARLARI VE BUTONLAR
+        Card(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0))
         ) {
-            Button(
-                onClick = { viewModel.startSocket("ws://10.118.72.84:5000/ws") },
-                modifier = Modifier.weight(1f),
-                enabled = !isConnected
-            ) { Text("Bağlan") }
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text("🌐 Sunucu Bağlantısı", style = MaterialTheme.typography.labelMedium, color = Color.DarkGray)
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = ipAddress,
+                        onValueChange = { ipAddress = it },
+                        label = { Text("IP Adresi") },
+                        modifier = Modifier.weight(2f),
+                        enabled = !isConnected,
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = port,
+                        onValueChange = { port = it },
+                        label = { Text("Port") },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isConnected,
+                        singleLine = true
+                    )
+                }
 
-            Button(
-                onClick = { viewModel.stopSocket() },
-                modifier = Modifier.weight(1f),
-                enabled = isConnected,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            ) { Text("Bağlantıyı Kes") }
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.startSocket("ws://$ipAddress:$port/ws") },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isConnected
+                    ) { Text("Bağlan") }
+
+                    Button(
+                        onClick = { viewModel.stopSocket() },
+                        modifier = Modifier.weight(1f),
+                        enabled = isConnected,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) { Text("Kes") }
+                }
+            }
         }
 
         // 4. ŞİFRELEME AYARLARI
@@ -210,6 +278,27 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
                 shape = RoundedCornerShape(12.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
+            
+            // DOSYA GÖNDERME BUTONU
+            IconButton(
+                onClick = { filePickerLauncher.launch("*/*") },
+                enabled = isConnected,
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(
+                         if (isConnected) Color(0xFF757575) else Color.LightGray,
+                         RoundedCornerShape(12.dp)
+                    )
+            ) {
+                 Icon(
+                     imageVector = Icons.Default.Add,
+                     contentDescription = "Dosya Seç",
+                     tint = Color.White
+                 )
+            }
+            
+            Spacer(modifier = Modifier.width(8.dp))
+
             IconButton(
                 onClick = {
                     if (messageText.isNotBlank()) {
