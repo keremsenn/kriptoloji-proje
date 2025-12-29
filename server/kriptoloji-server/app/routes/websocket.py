@@ -2,6 +2,9 @@ import json
 import logging
 import threading
 import traceback
+import time
+import os
+import base64
 from flask_sock import Sock
 from app.models.message import MessagePacket
 from app.services.cipher_service import CipherService
@@ -71,7 +74,7 @@ def register_socket_routes(sock: Sock, key_service: KeyService):
 
                             ws.send(json.dumps({"type": "key_exchange_ack", "status": "success"}))
                             print(f"✅ ECC El Sıkışması Tamamlandı. Metod: {cipher_method}")
-                            print(f"Ortak Anahtar: {shared_key[:15]}...")
+                            print(f"🔑 GÜNCEL SİMETRİK ANAHTAR: {shared_key}")
                         continue
 
                     # 3. RSA ANAHTAR DEĞİŞİMİ
@@ -87,7 +90,44 @@ def register_socket_routes(sock: Sock, key_service: KeyService):
                             print("✅ Client RSA public key alındı")
                         continue
 
-                    # 5. NORMAL MESAJLAŞMA
+                    # 5. DOSYA YÜKLEME
+                    if packet_type == 'file_upload':
+                        file_name = packet.get('filename')
+                        encrypted_data = packet.get('data')
+                        method = packet.get('method', 'aes')
+                        use_library = packet.get('use_library', True)
+
+                        client_key_data = key_service.get_client_key(client_id)
+                        if client_key_data:
+                            key = client_key_data['key']
+                            print(f"\n📂 Dosya Yükleniyor: {file_name}")
+                            try:
+                                start_dec = time.time()
+                                file_bytes = CipherService.decrypt_file(encrypted_data, method, key, use_library)
+                                end_dec = time.time()
+                                
+                                upload_dir = os.path.join(os.getcwd(), 'uploads')
+                                os.makedirs(upload_dir, exist_ok=True)
+                                file_path = os.path.join(upload_dir, file_name)
+                                
+                                with open(file_path, 'wb') as f:
+                                    f.write(file_bytes)
+                                    
+                                print(f"✅ Dosya Kaydedildi: {file_path}")
+                                print(f"⏱️ Dosya Deşifreleme Süresi: {(end_dec - start_dec) * 1000:.2f} ms")
+                                
+                                ws.send(json.dumps({
+                                    "type": "message", 
+                                    "message": CipherService.encrypt_message(f"Dosya alındı: {file_name}", method, key, use_library),
+                                    "method": method
+                                }))
+                            except Exception as e:
+                                logger.error(f"Dosya hatası: {e}")
+                                print(f"❌ Dosya hatası: {e}")
+                                ws.send(json.dumps({"type": "error", "message": "Dosya yüklenemedi."}))
+                        continue
+
+                    # 6. NORMAL MESAJLAŞMA
                     handle_message(ws, packet, client_id, key_service)
 
                 except json.JSONDecodeError:
@@ -115,9 +155,16 @@ def handle_key_exchange(ws, packet: dict, client_id: str, key_service: KeyServic
 
         logger.info("🔓 RSA ile deşifreleme başlatılıyor...")
         print("🔓 RSA ile deşifreleme başlatılıyor...")
+        
+        start_time = time.time()
         symmetric_key = key_service.decrypt_symmetric_key(encrypted_key)
+        end_time = time.time()
+        duration_ms = (end_time - start_time) * 1000
+        
         logger.info(f"✅ Simetrik anahtar deşifrelendi: {symmetric_key[:20]}...")
-        print(f"✅ Simetrik anahtar deşifrelendi: {symmetric_key[:20]}...")
+        print(f"✅ Simetrik anahtar deşifrelendi. (Süre: {duration_ms:.2f} ms)")
+        print(f"✅ Simetrik anahtar deşifrelendi.")
+        print(f"🔑 GÜNCEL SİMETRİK ANAHTAR: {symmetric_key}")
         
 
         key_service.store_client_key(client_id, symmetric_key, method)
@@ -161,15 +208,19 @@ def handle_message(ws, packet: dict, client_id: str, key_service: KeyService):
 
     try:
         # 3. DEŞİFRELEME (Gelen Mesaj)
+        start_dec = time.time()
         decrypted = CipherService.decrypt_message(message, method, key, use_library)
-        print(f"🔓 Çözüldü: {decrypted}")
+        end_dec = time.time()
+        print(f"🔓 Çözüldü: {decrypted} (Süre: {(end_dec - start_dec) * 1000:.2f} ms)")
 
         # 4. İŞLEME (Sunucu yanıtı ekle)
         processed = decrypted + " (sunucuda alındı)"
 
         # 5. ŞİFRELEME (Gidecek Yanıt)
+        start_enc = time.time()
         encrypted_response = CipherService.encrypt_message(processed, method, key, use_library)
-        print(f"🔐 Yanıt Şifrelendi")
+        end_enc = time.time()
+        print(f"🔐 Yanıt Şifrelendi (Süre: {(end_enc - start_enc) * 1000:.2f} ms)")
 
         # 6. YANIT PAKETİNİ OLUŞTUR VE GÖNDER
         response = MessagePacket(
@@ -181,6 +232,7 @@ def handle_message(ws, packet: dict, client_id: str, key_service: KeyService):
         ws.send(json.dumps(response.to_dict()))
         print(f"✅ Cevap Gönderildi")
 
+    # 6. DOSYA YÜKLEME
     except Exception as e:
         logger.error(f"❌ Mesaj işleme hatası: {e}")
         ws.send(json.dumps({"type": "error", "message": "Mesaj işlenirken hata oluştu."}))
