@@ -120,7 +120,11 @@ class ChatViewModel : ViewModel() {
                     clientEccPrivateKey = myPriv
 
                     // ECDH ile ortak anahtarı (Shared Secret) otomatik türet
+                    val start = System.nanoTime()
                     symmetricKey = ECCCipher.deriveSharedKey(myPriv, serverEccPublicKey!!)
+                    val end = System.nanoTime()
+                    val duration = (end - start) / 1_000_000.0
+                    appendMessage("[sistem] ⏱️ ECDH Türetme: ${"%.2f".format(duration)} ms")
 
                     val eccResponse = JSONObject().apply {
                         put("type", "client_ecc_public_key")
@@ -130,6 +134,7 @@ class ChatViewModel : ViewModel() {
 
                     socketManager?.send(eccResponse.toString())
                     Log.d(TAG, "✅ ECC El sıkışma paketi gönderildi. Metod: ${_cipherMethod.value}")
+                    appendMessage("[sistem] 🔑 GÜNCEL ECC ORTAK ANAHTAR: $symmetricKey")
                 }
 
                 "key_exchange_ack" -> {
@@ -148,8 +153,12 @@ class ChatViewModel : ViewModel() {
                         if (key == null) {
                             appendMessage("[sistem] ⚠️ Hata: Anahtar henüz hazır değil!")
                         } else {
+                            val start = System.nanoTime()
                             val decrypted = CipherFactory.decrypt(encrypted, method, key, useLib)
+                            val end = System.nanoTime()
+                            val duration = (end - start) / 1_000_000.0
                             appendMessage("[sunucudan] $decrypted")
+                            appendMessage("[sistem] ⏱️ Deşifreleme: ${"%.2f".format(duration)} ms")
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Deşifreleme hatası: ${e.message}")
@@ -175,7 +184,8 @@ class ChatViewModel : ViewModel() {
             symmetricKey = randomKey
 
             val encryptedKey = RSACipher.encrypt(randomKey, serverPublicKey!!)
-
+            
+            val start = System.nanoTime()
             socketManager?.send(JSONObject().apply {
                 put("type", "key_exchange")
                 put("encrypted_key", encryptedKey)
@@ -183,6 +193,7 @@ class ChatViewModel : ViewModel() {
             }.toString())
 
             appendMessage("[sistem] 🔐 Oturum anahtarı otomatik oluşturuldu.")
+            appendMessage("[sistem] 🔑 GÜNCEL RSA/AES ANAHTAR: $symmetricKey")
         } catch (e: Exception) {
             appendMessage("[hata] RSA Değişim Hatası")
         }
@@ -204,7 +215,10 @@ class ChatViewModel : ViewModel() {
         val useLib = _useLibrary.value
 
         try {
+            val start = System.nanoTime()
             val encrypted = CipherFactory.encrypt(plainText, method, activeKey, useLib)
+            val end = System.nanoTime()
+            val duration = (end - start) / 1_000_000.0
 
             val packet = JSONObject().apply {
                 put("type", "message")
@@ -215,6 +229,7 @@ class ChatViewModel : ViewModel() {
 
             socketManager?.send(packet.toString())
             appendMessage("[ben] $plainText ✓")
+            appendMessage("[sistem] ⏱️ Şifreleme: ${"%.2f".format(duration)} ms")
 
         } catch (e: Exception) {
             Log.e(TAG, "Gönderim hatası: ${e.message}")
@@ -232,8 +247,47 @@ class ChatViewModel : ViewModel() {
         clientEccPrivateKey = null
     }
 
-    private fun appendMessage(m: String) {
+    fun appendMessage(m: String) {
         viewModelScope.launch { _messages.value = _messages.value + m }
+    }
+
+    fun sendFile(fileName: String, fileData: ByteArray) {
+        if (!_isConnected.value) {
+            appendMessage("[sistem] ⚠️ Bağlı değilsiniz.")
+            return
+        }
+
+        val activeKey = symmetricKey
+        if (activeKey == null) {
+            appendMessage("[sistem] ⚠️ Önce anahtar değişimi tamamlanmalı!")
+            return
+        }
+
+        val method = _cipherMethod.value
+        val useLib = _useLibrary.value
+
+        try {
+            val start = System.nanoTime()
+            val encryptedData = CipherFactory.encryptBytes(fileData, method, activeKey, useLib)
+            val end = System.nanoTime()
+            val duration = (end - start) / 1_000_000.0
+
+            val packet = JSONObject().apply {
+                put("type", "file_upload")
+                put("filename", fileName)
+                put("data", encryptedData)
+                put("method", method)
+                put("use_library", useLib)
+            }
+
+            socketManager?.send(packet.toString())
+            appendMessage("[ben] 📁 Dosya Gönderildi: $fileName")
+            appendMessage("[sistem] ⏱️ Dosya Şifreleme: ${"%.2f".format(duration)} ms")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Dosya şifreleme hatası: ${e.message}")
+            appendMessage("[hata] Dosya şifrelenemedi.")
+        }
     }
 
     fun stopSocket() {
