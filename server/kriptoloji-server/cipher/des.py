@@ -75,7 +75,6 @@ class DESCipher:
 
         if encrypt:
             iv = os.urandom(8)
-            # Gelen veri bytes ise encode etme, str ise et
             raw_data = data_bytes_or_str if isinstance(data_bytes_or_str, bytes) else data_bytes_or_str.encode('utf-8')
             raw_data = pad(raw_data, 8)
             result = bytearray()
@@ -127,8 +126,6 @@ class DESCipher:
 
     @staticmethod
     def _generate_subkeys(key):
-        """Android (generateSubkeys) ile %100 uyumlu anahtar türetimi."""
         md = hashlib.sha1(key)
         h = md.digest()
-        # Android tarafındaki '((hash[i % hash.size].toLong() and 0xFF) shl 24) or 0x555555L' mantığı:
         return [((h[i % len(h)] & 0xFF) << 24) | 0x555555 for i in range(16)]

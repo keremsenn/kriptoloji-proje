@@ -35,7 +35,6 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
     val useLibrary by viewModel.useLibrary.collectAsState()
     val listState = rememberLazyListState()
 
-    // Sunucu Bağlantı Ayarları
     var ipAddress by remember { mutableStateOf("192.168.0.5") }
     var port by remember { mutableStateOf("5000") }
 
@@ -52,8 +51,7 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel()) {
             try {
                 contentResolver.openInputStream(it)?.use { inputStream ->
                     val bytes = inputStream.readBytes()
-                    
-                    // Dosya ismini al
+
                     var fileName = "unknown_file"
                     contentResolver.query(it, null, null, null, null)?.use { cursor ->
                         if (cursor.moveToFirst()) {

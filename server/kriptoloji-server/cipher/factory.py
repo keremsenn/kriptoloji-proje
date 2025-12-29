@@ -9,7 +9,6 @@ class CipherFactory:
 
     @staticmethod
     def encrypt(text: str, method: str, key, use_library: bool = True) -> str:
-        """Sadece simetrik yöntemlerle (AES/DES) mesaj şifreler."""
         if method == 'aes':
             return AESCipher.encrypt(text, key, use_library)
         elif method == 'des':

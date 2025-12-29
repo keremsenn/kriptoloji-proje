@@ -81,10 +81,6 @@ class AESCipher:
         
         if AESCipher._s_box[0x63] != 0x7c:
             AESCipher._initialize_manual_aes()
-        # Manuel modda byte array işlemleri için string dönüşümü yapmadan doğrudan byte çalışmalı
-        # Ancak mevcut manuel yapı string odaklı olduğu için şimdilik base64 encode edip string gibi davranabiliriz
-        # YA DA manuel mantığı byte array alacak şekilde güncelleyebiliriz.
-        # En temizi: _encrypt_manual_logic zaten encode() yapıyor. Onu bypass edecek bir yöntem eklemek.
         return AESCipher._encrypt_manual_logic_bytes(data, key_bytes)
 
     @staticmethod
@@ -135,7 +131,6 @@ class AESCipher:
 
         round_keys = []
         for i in range(0, 44, 4):
-            # 4x4 matris (sütun öncelikli yapı için uygun r,c dizilimi)
             round_matrix = [[(words[i + j] >> (24 - 8 * r)) & 0xFF for j in range(4)] for r in range(4)]
             round_keys.append(round_matrix)
         return round_keys
