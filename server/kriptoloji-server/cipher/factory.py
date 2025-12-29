@@ -25,3 +25,12 @@ class CipherFactory:
             return DESCipher.decrypt(text, key, use_library)
         else:
             raise ValueError(f"Mesajlaşma için desteklenmeyen veya geçersiz yöntem: {method}")
+
+    @staticmethod
+    def decrypt_file(text: str, method: str, key, use_library: bool = True) -> bytes:
+        if method == 'aes':
+            return AESCipher.decrypt_bytes(text, key, use_library)
+        elif method == 'des':
+            return DESCipher.decrypt_bytes(text, key, use_library)
+        else:
+            raise ValueError(f"Dosya şifre çözümü için geçersiz yöntem: {method}")
