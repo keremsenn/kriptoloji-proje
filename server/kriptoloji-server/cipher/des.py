@@ -37,27 +37,47 @@ class DESCipher:
         return DESCipher._manual_logic(ciphertext, key_bytes, encrypt=False)
 
     @staticmethod
+    def encrypt_bytes(data: bytes, key, use_library: bool = True) -> str:
+        key_bytes = DESCipher._ensure_key(key)
+        if use_library and LIBRARY_MODE_AVAILABLE:
+            return DESCipher._encrypt_library(data, key_bytes)
+        return DESCipher._manual_logic_bytes(data, key_bytes, encrypt=True)
+
+    @staticmethod
+    def decrypt_bytes(ciphertext: str, key, use_library: bool = True) -> bytes:
+        key_bytes = DESCipher._ensure_key(key)
+        if use_library and LIBRARY_MODE_AVAILABLE:
+            return DESCipher._decrypt_library_bytes(ciphertext, key_bytes)
+        return DESCipher._manual_logic_bytes(ciphertext, key_bytes, encrypt=False)
+
+    @staticmethod
     def _encrypt_library(text_bytes: bytes, key: bytes) -> str:
         cipher = DES.new(key, DES.MODE_CBC)
         iv = cipher.iv
         return base64.b64encode(iv + cipher.encrypt(pad(text_bytes, 8))).decode('utf-8')
-
+    
     @staticmethod
-    def _decrypt_library(ciphertext: str, key: bytes) -> str:
+    def _decrypt_library_bytes(ciphertext: str, key: bytes) -> bytes:
         data = base64.b64decode(ciphertext)
         iv, enc = data[:8], data[8:]
         cipher = DES.new(key, DES.MODE_CBC, iv=iv)
-        return unpad(cipher.decrypt(enc), 8).decode('utf-8')
+        return unpad(cipher.decrypt(enc), 8)
+
+    @staticmethod
+    def _decrypt_library(ciphertext: str, key: bytes) -> str:
+        return DESCipher._decrypt_library_bytes(ciphertext, key).decode('utf-8')
 
     @classmethod
-    def _manual_logic(cls, data_str, key_bytes, encrypt=True):
+    def _manual_logic_bytes(cls, data_bytes_or_str, key_bytes, encrypt=True):
         subkeys = cls._generate_subkeys(key_bytes)
         if not encrypt:
             subkeys = subkeys[::-1]
 
         if encrypt:
             iv = os.urandom(8)
-            raw_data = pad(data_str.encode('utf-8'), 8)
+            # Gelen veri bytes ise encode etme, str ise et
+            raw_data = data_bytes_or_str if isinstance(data_bytes_or_str, bytes) else data_bytes_or_str.encode('utf-8')
+            raw_data = pad(raw_data, 8)
             result = bytearray()
             prev = iv
             for i in range(0, len(raw_data), 8):
@@ -67,7 +87,7 @@ class DESCipher:
                 prev = enc_block
             return base64.b64encode(iv + result).decode('utf-8')
         else:
-            raw_data = base64.b64decode(data_str)
+            raw_data = base64.b64decode(data_bytes_or_str)
             iv, encrypted = raw_data[:8], raw_data[8:]
             result = bytearray()
             prev = iv
@@ -76,7 +96,16 @@ class DESCipher:
                 dec_block = cls._des_transform(block, subkeys)
                 result.extend(bytes([b ^ p for b, p in zip(dec_block, prev)]))
                 prev = block
-            return unpad(result, 8).decode('utf-8')
+            
+            res_bytes = unpad(result, 8)
+            return res_bytes
+
+    @classmethod
+    def _manual_logic(cls, data_str, key_bytes, encrypt=True):
+        res = cls._manual_logic_bytes(data_str, key_bytes, encrypt)
+        if not encrypt:
+            return res.decode('utf-8')
+        return res
 
     @classmethod
     def _des_transform(cls, block, keys):
