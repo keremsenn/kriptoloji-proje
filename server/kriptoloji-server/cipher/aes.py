@@ -7,12 +7,11 @@ from cipher.base import LIBRARY_MODE_AVAILABLE, AES, pad, unpad
 class AESCipher:
     _s_box = [0] * 256
     _inv_s_box = [0] * 256
-    _r_con = [0x00000000, 0x01000000, 0x02000000, 0x04000000, 0x08000000,
-              0x10000000, 0x20000000, 0x40000000, 0x80000000, 0x1B000000, 0x36000000]
+    _r_con = [0] * 11
 
     @classmethod
     def _initialize_manual_aes(cls):
-        """Galois Field matematiği ile S-Box ve Ters S-Box üretir."""
+        """Galois Field matematiği ile S-Box ve R-Con üretir."""
 
         def galois_mult(a, b):
             p = 0
@@ -23,6 +22,12 @@ class AESCipher:
                 if hi: a ^= 0x1B
                 b >>= 1
             return p
+
+        # R-Con Üretimi (powers of 2 in GF(2^8))
+        # Rcon[i] = 2^(i-1)
+        cls._r_con[1] = 1
+        for i in range(2, 11):
+            cls._r_con[i] = galois_mult(cls._r_con[i-1], 2)
 
         def get_inverse(n):
             if n == 0: return 0
@@ -68,6 +73,30 @@ class AESCipher:
             AESCipher._initialize_manual_aes()
         return AESCipher._decrypt_manual_logic(ciphertext, key_bytes)
 
+    @staticmethod
+    def encrypt_bytes(data: bytes, key, use_library: bool = True) -> str:
+        key_bytes = AESCipher._ensure_key(key)
+        if use_library and LIBRARY_MODE_AVAILABLE:
+            return AESCipher._encrypt_library(data, key_bytes)
+        
+        if AESCipher._s_box[0x63] != 0x7c:
+            AESCipher._initialize_manual_aes()
+        # Manuel modda byte array işlemleri için string dönüşümü yapmadan doğrudan byte çalışmalı
+        # Ancak mevcut manuel yapı string odaklı olduğu için şimdilik base64 encode edip string gibi davranabiliriz
+        # YA DA manuel mantığı byte array alacak şekilde güncelleyebiliriz.
+        # En temizi: _encrypt_manual_logic zaten encode() yapıyor. Onu bypass edecek bir yöntem eklemek.
+        return AESCipher._encrypt_manual_logic_bytes(data, key_bytes)
+
+    @staticmethod
+    def decrypt_bytes(ciphertext: str, key, use_library: bool = True) -> bytes:
+        key_bytes = AESCipher._ensure_key(key)
+        if use_library and LIBRARY_MODE_AVAILABLE:
+            return AESCipher._decrypt_library_bytes(ciphertext, key_bytes)
+
+        if AESCipher._s_box[0x63] != 0x7c:
+            AESCipher._initialize_manual_aes()
+        return AESCipher._decrypt_manual_logic_bytes(ciphertext, key_bytes)
+
     # --- KÜTÜPHANELİ METODLAR ---
     @staticmethod
     def _encrypt_library(text_bytes: bytes, key: bytes) -> str:
@@ -76,15 +105,18 @@ class AESCipher:
         padded_text = pad(text_bytes, 16)
         ciphertext = cipher.encrypt(padded_text)
         return base64.b64encode(iv + ciphertext).decode('utf-8')
-
+    
     @staticmethod
-    def _decrypt_library(ciphertext: str, key: bytes) -> str:
+    def _decrypt_library_bytes(ciphertext: str, key: bytes) -> bytes:
         data = base64.b64decode(ciphertext)
         iv = data[:16]
         encrypted = data[16:]
         cipher = AES.new(key, AES.MODE_CBC, iv=iv)
-        decrypted = unpad(cipher.decrypt(encrypted), 16)
-        return decrypted.decode('utf-8')
+        return unpad(cipher.decrypt(encrypted), 16)
+
+    @staticmethod
+    def _decrypt_library(ciphertext: str, key: bytes) -> str:
+        return AESCipher._decrypt_library_bytes(ciphertext, key).decode('utf-8')
 
     # --- MANUEL ÇEKİRDEK OPERASYONLAR ---
     @classmethod
@@ -168,6 +200,40 @@ class AESCipher:
         return base64.b64encode(iv + ciphertext).decode()
 
     @classmethod
+    def _encrypt_manual_logic_bytes(cls, data_bytes, key_bytes):
+        round_keys = cls._expand_key(key_bytes)
+        iv = os.urandom(16)
+        pad_len = 16 - (len(data_bytes) % 16)
+        data = data_bytes + bytes([pad_len] * pad_len)
+        ciphertext = bytearray()
+        prev = iv
+        for i in range(0, len(data), 16):
+            block = bytes([b ^ p for b, p in zip(data[i:i + 16], prev)])
+            state = [[block[r + 4 * c] for c in range(4)] for r in range(4)]
+            for r in range(4):
+                for c in range(4): state[r][c] ^= round_keys[0][r][c]
+            for j in range(1, 10):
+                for r in range(4):
+                    for c in range(4): state[r][c] = cls._s_box[state[r][c]]
+                state[1] = state[1][1:] + state[1][:1]
+                state[2] = state[2][2:] + state[2][:2]
+                state[3] = state[3][3:] + state[3][:3]
+                cls._mix_columns(state)
+                for r in range(4):
+                    for c in range(4): state[r][c] ^= round_keys[j][r][c]
+            for r in range(4):
+                for c in range(4): state[r][c] = cls._s_box[state[r][c]]
+            state[1] = state[1][1:] + state[1][:1]
+            state[2] = state[2][2:] + state[2][:2]
+            state[3] = state[3][3:] + state[3][:3]
+            for r in range(4):
+                for c in range(4): state[r][c] ^= round_keys[10][r][c]
+            out = bytes([state[r][c] for c in range(4) for r in range(4)])
+            ciphertext.extend(out)
+            prev = out
+        return base64.b64encode(iv + ciphertext).decode()
+
+    @classmethod
     def _decrypt_manual_logic(cls, crypto_b64, key_bytes):
         round_keys = cls._expand_key(key_bytes)
         raw = base64.b64decode(crypto_b64)
@@ -201,3 +267,38 @@ class AESCipher:
 
         pad_len = plain[-1]
         return plain[:-pad_len].decode('utf-8')
+
+    @classmethod
+    def _decrypt_manual_logic_bytes(cls, crypto_b64, key_bytes):
+        round_keys = cls._expand_key(key_bytes)
+        raw = base64.b64decode(crypto_b64)
+        iv, data = raw[:16], raw[16:]
+        plain = bytearray()
+        prev = iv
+        for i in range(0, len(data), 16):
+            block = data[i:i + 16]
+            state = [[block[r + 4 * c] for c in range(4)] for r in range(4)]
+            for r in range(4):
+                for c in range(4): state[r][c] ^= round_keys[10][r][c]
+            state[1] = state[1][-1:] + state[1][:-1]
+            state[2] = state[2][-2:] + state[2][:-2]
+            state[3] = state[3][-3:] + state[3][:-3]
+            for r in range(4):
+                for c in range(4): state[r][c] = cls._inv_s_box[state[r][c]]
+            for j in range(9, 0, -1):
+                for r in range(4):
+                    for c in range(4): state[r][c] ^= round_keys[j][r][c]
+                cls._mix_columns(state, inv=True)
+                state[1] = state[1][-1:] + state[1][:-1]
+                state[2] = state[2][-2:] + state[2][:-2]
+                state[3] = state[3][-3:] + state[3][:-3]
+                for r in range(4):
+                    for c in range(4): state[r][c] = cls._inv_s_box[state[r][c]]
+            for r in range(4):
+                for c in range(4): state[r][c] ^= round_keys[0][r][c]
+            out = bytes([state[r][c] for c in range(4) for r in range(4)])
+            plain.extend(bytes([o ^ p for o, p in zip(out, prev)]))
+            prev = block
+
+        pad_len = plain[-1]
+        return plain[:-pad_len]
