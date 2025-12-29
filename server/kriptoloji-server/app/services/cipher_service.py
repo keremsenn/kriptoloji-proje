@@ -22,6 +22,14 @@ class CipherService:
         except Exception as e:
             logger.error(f"Deşifreleme hatası: {e}")
             raise
+            
+    @staticmethod
+    def decrypt_file(ciphertext: str, method: str, key: str, use_library: bool = True) -> bytes:
+        try:
+            return CipherFactory.decrypt_file(ciphertext, method, key, use_library)
+        except Exception as e:
+            logger.error(f"Dosya deşifreleme hatası: {e}")
+            raise
     
     @staticmethod
     def get_default_key(method: str) -> str:

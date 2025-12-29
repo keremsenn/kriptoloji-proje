@@ -29,6 +29,14 @@ object CipherFactory {
         }
     }
 
+    fun encryptBytes(data: ByteArray, method: String, key: Any, useLibrary: Boolean = true): String {
+        return when (method) {
+            METHOD_AES -> AESCipher.encryptBytes(data, key, useLibrary)
+            METHOD_DES -> DESCipher.encryptBytes(data, key, useLibrary)
+            else -> throw IllegalArgumentException("Bilinmeyen metod: $method")
+        }
+    }
+
     fun decrypt(text: String, method: String, key: Any, useLibrary: Boolean = true): String {
         return when (method) {
             METHOD_AES -> AESCipher.decrypt(text, key, useLibrary)
@@ -101,12 +109,10 @@ object RSACipher {
 object AESCipher {
     private val sBox = IntArray(256)
     private val invSBox = IntArray(256)
-    private val rCon = intArrayOf(
-        0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36
-    )
+    private val rCon = IntArray(11)
 
     init {
-        generateSBox()
+        initializeTables()
     }
 
     // --- 1. MATEMATİKSEL ALTYAPI (Galois Field & S-Box) ---
@@ -127,7 +133,8 @@ object AESCipher {
     private fun rotateLeft8(n: Int, shift: Int): Int =
         ((n shl shift) and 0xFF) or (n ushr (8 - shift))
 
-    private fun generateSBox() {
+    private fun initializeTables() {
+        // S-Box Üretimi
         for (i in 0 until 256) {
             var inv = 0
             if (i != 0) {
@@ -142,6 +149,12 @@ object AESCipher {
                     rotateLeft8(inv, 3) xor rotateLeft8(inv, 4) xor 0x63
             sBox[i] = s and 0xFF
             invSBox[s and 0xFF] = i
+        }
+
+        // R-Con Üretimi (Dynamic Galois)
+        rCon[1] = 1
+        for (i in 2 until 11) {
+            rCon[i] = galoisMult(rCon[i - 1], 2)
         }
     }
 
@@ -277,6 +290,32 @@ object AESCipher {
         cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(k, "AES"))
         val iv = cipher.iv
         val encrypted = cipher.doFinal(textBytes)
+        return Base64.encodeToString(iv + encrypted, Base64.NO_WRAP)
+    }
+
+    fun encryptBytes(data: ByteArray, key: Any, lib: Boolean): String {
+        val k = prepareKey(key)
+
+        if (!lib) {
+            val roundKeys = expandKey(k)
+            val iv = ByteArray(16).apply { SecureRandom().nextBytes(this) }
+            val padded = pkcs7Pad(data)
+            val ciphertext = mutableListOf<Byte>()
+            var prevBlock = iv
+            for (i in padded.indices step 16) {
+                val block = padded.sliceArray(i until i + 16)
+                val xored = ByteArray(16) { j -> (block[j].toInt() xor prevBlock[j].toInt()).toByte() }
+                val encBlock = encryptBlock(xored, roundKeys)
+                ciphertext.addAll(encBlock.toList())
+                prevBlock = encBlock
+            }
+            return Base64.encodeToString(iv + ciphertext.toByteArray(), Base64.NO_WRAP)
+        }
+
+        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(k, "AES"))
+        val iv = cipher.iv
+        val encrypted = cipher.doFinal(data)
         return Base64.encodeToString(iv + encrypted, Base64.NO_WRAP)
     }
 
@@ -420,6 +459,31 @@ object DESCipher {
         val cipher = Cipher.getInstance("DES/CBC/PKCS5Padding")
         cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(k, "DES"))
         return Base64.encodeToString(cipher.iv + cipher.doFinal(textBytes), Base64.NO_WRAP)
+    }
+
+    fun encryptBytes(data: ByteArray, key: Any, lib: Boolean): String {
+        val k = prepareKey(key)
+
+        if (!lib) {
+            val subkeys = generateSubkeys(k)
+            val iv = ByteArray(8).apply { SecureRandom().nextBytes(this) }
+            val padded = pkcs7Pad(data, 8)
+            val ciphertext = mutableListOf<Byte>()
+            var prevBlock = iv
+
+            for (i in padded.indices step 8) {
+                val block = padded.sliceArray(i until i + 8)
+                val xored = ByteArray(8) { j -> (block[j].toInt() xor prevBlock[j].toInt()).toByte() }
+                val encBlock = desTransform(xored, subkeys)
+                ciphertext.addAll(encBlock.toList())
+                prevBlock = encBlock
+            }
+            return Base64.encodeToString(iv + ciphertext.toByteArray(), Base64.NO_WRAP)
+        }
+
+        val cipher = Cipher.getInstance("DES/CBC/PKCS5Padding")
+        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(k, "DES"))
+        return Base64.encodeToString(cipher.iv + cipher.doFinal(data), Base64.NO_WRAP)
     }
 
     fun decrypt(data: String, key: Any, lib: Boolean): String {
