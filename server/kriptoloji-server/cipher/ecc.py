@@ -50,11 +50,9 @@ class ECCCipher:
             # 3. ECDH Exchange (Paylaşılan sırrı hesapla)
             shared_secret = private_key.exchange(ec.ECDH(), peer_public_key)
 
-            # 4. Anahtar Türetme (Android tarafındaki MessageDigest SHA-256 ile birebir uyumlu)
-            # HKDF yerine doğrudan SHA-256 özeti alıyoruz çünkü Android tarafında basit özet kullandık.
             hasher = hashlib.sha256()
             hasher.update(shared_secret)
-            derived_key = hasher.digest()[:16]  # AES-128 için ilk 16 byte
+            derived_key = hasher.digest()[:16]
 
             return base64.b64encode(derived_key).decode('utf-8')
 
