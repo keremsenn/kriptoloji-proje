@@ -2,6 +2,14 @@
 
 Bu proje, **Android (Kotlin)** ve **Python (Flask-SocketIO)** mimarisi üzerine kurulu, modern kriptografik algoritmaları kullanan uçtan uca güvenli bir haberleşme uygulamasıdır. Yazılım, hem asimetrik hem de simetrik şifreleme yöntemlerini birleştiren **Hibrit Kriptosistem** yapısını temel alır.
 
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/f85ee583-77f3-4e06-b2e7-90c27c998cb7" width="30%" title="Kriptoloji Ekranı 1" />
+  <img src="https://github.com/user-attachments/assets/973d3ad5-7dc7-416b-954e-fd1c77acbdd9" width="30%" title="Kriptoloji Ekranı 2" />
+
+</p>
+  (WireShark şifreli metinler)
+  <img src="https://github.com/user-attachments/assets/f19436cf-21db-4785-9c02-81d836d098c4" width="1000" title="Kriptoloji Ekranı 1" />
+
 ## 🚀 Öne Çıkan Özellikler
 
 *   **Dinamik El Sıkışma (Handshake):** Kullanıcı, bağlantı aşamasında **RSA** veya **ECC (ECDH)** yöntemlerinden birini seçerek güvenli anahtar değişimini başlatabilir.
